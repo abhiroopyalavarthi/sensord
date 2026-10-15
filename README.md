@@ -9,6 +9,8 @@ ThreadSanitizer in CI, and the frame parser is fuzzed with libFuzzer.
 
 ![dashboard](docs/dashboard.png)
 
+https://github.com/user-attachments/assets/9d4e98e0-4c98-49a2-9b19-9ac110b4d147
+
 *Three simulated PPG devices (one switched to 500 Hz from the dashboard) and a
 TCP device that has been unplugged.*
 
