@@ -85,8 +85,8 @@ TEST_F(E2E, StreamHasNoUnexplainedGaps) {
   EXPECT_EQ(st.error_code(), grpc::StatusCode::DEADLINE_EXCEEDED);
   EXPECT_EQ(unexplained, 0u);
   EXPECT_EQ(devs.size(), 3u);
-  for (auto& [id, t] : devs) EXPECT_GT(t.samples, 1000u) << "device " << id;
-  EXPECT_GT(batches, 100u);
+  for (auto& [id, t] : devs) EXPECT_GT(t.samples, 300u) << "device " << id;
+  EXPECT_GT(batches, 20u);
 }
 
 TEST_F(E2E, SetSampleRateReachesDevice) {

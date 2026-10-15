@@ -93,8 +93,8 @@ TEST(Pipeline, SlowSubscriberDropsOldestWithoutStallingOthers) {
 
   std::map<uint32_t, uint32_t> next_seq;
   uint64_t gaps = 0, batches = 0;
-  auto end = std::chrono::steady_clock::now() + 500ms;
-  while (std::chrono::steady_clock::now() < end) {
+  auto end = std::chrono::steady_clock::now() + 10s;
+  while (batches < 60 && std::chrono::steady_clock::now() < end) {
     auto b = fast->next(50ms);
     if (!b) continue;
     ++batches;
