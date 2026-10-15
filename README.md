@@ -151,8 +151,19 @@ simulated devices → pipeline → gRPC server on 127.0.0.1 → M gRPC clients,
 each on its own connection. **Latency** is from the moment a sample was taken
 on the (simulated) device to the moment a client decoded it, on the same
 monotonic clock. The simulators run in the same process, so their CPU is
-included. Machine: 2-vCPU cloud VM (Intel Xeon @ 2.1 GHz), Ubuntu 24.04, GCC 13
-`-O2`. *(Re-run on the M2 with `./build/sensord-bench` and update.)*
+included.
+
+**MacBook Pro (M2)**, Apple clang, `-O2`, 10 s runs, 10 ms batching:
+
+| Load | In | Out (all clients) | Drops | p50 | p99 | p99.9 | CPU |
+|---|---|---|---|---|---|---|---|
+| 16 devices × 1 kHz × 2 ch, 4 clients | 32.0K samples/s | 128K samples/s | 0 | 10.4 ms | 14.9 ms | 31.2 ms | 41% of a core |
+| 192 devices × 20 kHz × 2 ch, 8 clients | 7.68M samples/s | 61.4M samples/s | 0 | 10.4 ms | 19.9 ms | 60.1 ms | 477% of a core |
+
+p50 sits at ~10 ms because that's the batch flush window (see below).
+
+The tables below are from a 2-vCPU Linux cloud VM (Intel Xeon @ 2.1 GHz,
+GCC 13), where the batching comparison and the CRC before/after were run.
 
 **Typical load** (16 devices × 1 kHz × 2 channels, 4 subscribers, 10 s, 3 runs):
 
