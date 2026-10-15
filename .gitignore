@@ -1,0 +1,11 @@
+build*/
+.cache/
+compile_commands.json
+*.data
+*.data.old
+crash-*
+leak-*
+timeout-*
+.DS_Store
+.vscode/
+.idea/

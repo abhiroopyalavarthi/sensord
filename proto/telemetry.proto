@@ -1,0 +1,67 @@
+syntax = "proto3";
+
+package sensord.v1;
+
+// Telemetry service exposed by sensord.
+//  - ListDevices:   snapshot of every configured device and its link health
+//  - Subscribe:     server stream of sample batches (one batch ~= one flush
+//                   interval of one device, 10 ms by default)
+//  - SetSampleRate: sends a command frame down to the device
+service Telemetry {
+  rpc ListDevices(ListDevicesRequest) returns (ListDevicesResponse);
+  rpc Subscribe(SubscribeRequest) returns (stream SampleBatch);
+  rpc SetSampleRate(SetSampleRateRequest) returns (SetSampleRateResponse);
+}
+
+message ListDevicesRequest {}
+
+message DeviceInfo {
+  uint32 id = 1;
+  string name = 2;
+  string kind = 3;              // "sim", "serial", "tcp"
+  bool connected = 4;
+  uint32 sample_rate_hz = 5;    // last rate reported by the device
+  uint64 frames = 6;            // good frames decoded
+  uint64 crc_errors = 7;        // frames rejected by CRC
+  uint64 frames_lost = 8;       // gaps in the device sequence numbers
+  uint64 reconnects = 9;
+  uint64 samples = 10;
+  uint32 connection_epoch = 11; // bumps on every successful (re)connect
+  uint64 bytes_skipped = 12;    // garbage bytes skipped while resyncing
+}
+
+message ListDevicesResponse {
+  repeated DeviceInfo devices = 1;
+}
+
+message SubscribeRequest {
+  repeated uint32 device_ids = 1; // empty = all devices
+  uint32 max_queue = 2;           // per-subscriber queue length in batches (0 = default)
+}
+
+message ChannelSamples {
+  uint32 channel = 1;
+  uint32 frame_seq = 2;  // device sequence number of the frame these came from
+  uint64 t0_us = 3;      // device timestamp of values[0]
+  uint32 period_us = 4;  // spacing between values
+  repeated float values = 5;
+}
+
+message SampleBatch {
+  uint32 device_id = 1;
+  uint32 connection_epoch = 2;
+  uint64 device_frames_lost = 3;  // cumulative, for this device
+  uint64 subscriber_dropped = 4;  // cumulative batches dropped for THIS subscriber
+  int64 host_rx_mono_ns = 5;      // host monotonic time the batch was closed
+  repeated ChannelSamples blocks = 6;
+}
+
+message SetSampleRateRequest {
+  uint32 device_id = 1;
+  uint32 sample_rate_hz = 2;
+}
+
+message SetSampleRateResponse {
+  bool accepted = 1;
+  string error = 2;
+}

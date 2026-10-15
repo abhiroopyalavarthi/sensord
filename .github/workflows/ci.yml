@@ -1,0 +1,122 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+env:
+  DEPS: >-
+    ninja-build clang libclang-rt-18-dev
+    libgrpc++-dev protobuf-compiler-grpc libprotobuf-dev protobuf-compiler
+    libgtest-dev libgmock-dev qt6-base-dev
+
+jobs:
+  linux:
+    name: ${{ matrix.name }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: release (gcc, -Werror)
+            cc: gcc
+            cxx: g++
+            build_type: RelWithDebInfo
+            sanitize: ""
+            werror: "ON"
+            ctest_exclude: "^$"
+          - name: asan + ubsan (clang)
+            cc: clang
+            cxx: clang++
+            build_type: Debug
+            sanitize: "address,undefined"
+            werror: "OFF"
+            ctest_exclude: "^$"
+          # The TSan job runs everything except the gRPC end-to-end tests.
+          # Ubuntu's gRPC is not built with TSan, so its internal threads
+          # produce hundreds of false reports (none in our code; see README).
+          # All of the pipeline's own threading is covered by the unit and
+          # stress tests, which do not link gRPC.
+          - name: tsan (clang)
+            cc: clang
+            cxx: clang++
+            build_type: Debug
+            sanitize: "thread"
+            werror: "OFF"
+            ctest_exclude: "E2E"
+    env:
+      ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+      UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+      TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y $DEPS
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja
+          -DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+          -DSENSORD_SANITIZE=${{ matrix.sanitize }}
+          -DSENSORD_WERROR=${{ matrix.werror }}
+          -DSENSORD_BUILD_DASHBOARD=${{ matrix.sanitize == '' && 'ON' || 'OFF' }}
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure -E "${{ matrix.ctest_exclude }}"
+      - name: Stress test, more seeds
+        run: |
+          for seed in 11 22 33 44 55; do
+            SENSORD_STRESS_SEED=$seed SENSORD_STRESS_SECONDS=5 ./build/tests/stress_tests
+          done
+      - name: End-to-end smoke (real processes)
+        if: matrix.sanitize != 'thread'
+        run: |
+          ./build/sensord-sim --tcp 9100 --rate 500 &
+          SIM=$!
+          ./build/sensord --listen 127.0.0.1:50051 --sim 4 --sim-garbage 0.02 --sim-corrupt 0.01 --tcp 127.0.0.1:9100 &
+          SD=$!
+          sleep 2
+          ./build/sensorctl list
+          ./build/sensorctl set-rate 0 1000
+          ./build/sensorctl check --seconds 5
+          kill -INT $SD && wait $SD   # must exit 0 (clean shutdown)
+          kill $SIM
+
+  fuzz:
+    name: fuzz (libFuzzer, 3 min)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y $DEPS
+      - name: Build fuzzer
+        run: |
+          cmake -S . -B build-fuzz -G Ninja -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DSENSORD_BUILD_FUZZ=ON -DSENSORD_BUILD_TESTS=OFF -DSENSORD_BUILD_DASHBOARD=OFF
+          cmake --build build-fuzz --target fuzz_frame
+      - name: Fuzz
+        run: |
+          mkdir -p work crashes && cp fuzz/corpus/* work/
+          ./build-fuzz/fuzz/fuzz_frame work fuzz/corpus -max_total_time=180 \
+            -artifact_prefix=crashes/ -print_final_stats=1
+      - name: Upload crashing inputs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-crashes
+          path: crashes/
+
+  macos:
+    name: macOS build + tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: brew install grpc protobuf qt googletest ninja
+      - name: Configure
+        run: cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH="$(brew --prefix qt);$(brew --prefix)"
+      - name: Build
+        run: cmake --build build
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
